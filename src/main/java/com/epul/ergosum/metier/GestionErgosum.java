@@ -1,10 +1,12 @@
 package com.epul.ergosum.metier;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import com.epul.ergosum.controle.meserreurs.MonException;
 import com.epul.ergosum.persistance.DialogueBd;
@@ -52,8 +54,8 @@ public class GestionErgosum
 		{
 			Catalogue entity = new Catalogue();
 
-			entity.setAnnee(Integer.getInteger(map.get("annee")));
-        	entity.setQuantiteDistribuee(Integer.getInteger(map.get("quantitedistribuee")));
+			entity.setAnnee(Integer.parseInt(map.get("annee")));
+        	entity.setQuantiteDistribuee(Integer.parseInt(map.get("quantitedistribuee")));
 
         	return entity;
 		}).collect(Collectors.toList());
@@ -65,12 +67,27 @@ public class GestionErgosum
 			Trancheage entity = new Trancheage();
 
 			entity.setCodetranche(map.get("codetranche"));
-        	entity.setAgemin(Integer.getInteger(map.get("agemin")));
-        	entity.setAgemax(Integer.getInteger(map.get("agemax")));
+        	entity.setAgemin(Integer.parseInt(map.get("agemin")));
+        	entity.setAgemax(Integer.parseInt(map.get("agemax")));
 
         	return entity;
 		}).collect(Collectors.toList());
 	}
+	private static List<CatalogueQuantites> getCatalogueQuantites(List<Map<String, String>> result)
+	{
+		return result.stream().map(map ->
+		{
+			CatalogueQuantites entity = new CatalogueQuantites();
+
+			entity.setId(map.get("annee"));
+        	entity.setQuantite(map.get("quantite"));
+        	entity.setQuantiteDistribuee(map.get("quantitedistribuee"));
+
+        	return entity;
+		}).collect(Collectors.toList());
+	}
+	
+	
 	
 	
 	
@@ -99,8 +116,7 @@ public class GestionErgosum
 
 	public static Object listerToutesLesTranches() throws MonException
 	{
-		// TODO Auto-generated method stub
-		return null;
+		return getTrancheages(DialogueBd.lecture("SELECT * FROM trancheage"));
 	}
 
 	public static Object listerTousLesCatalogues() throws MonException
@@ -118,15 +134,18 @@ public class GestionErgosum
 		return getOne(getCategories(DialogueBd.lecture("SELECT * FROM categorie WHERE codecateg = " + codecateg + " LIMIT 0, 1")));
 	}
 
-	public static Trancheage rechercherTrancheage(String parameter) throws MonException
+	public static Trancheage rechercherTrancheage(String codetrancheage) throws MonException
 	{
-		// TODO Auto-generated method stub
-		return null;
+		return getOne(getTrancheages(DialogueBd.lecture("SELECT * FROM trancheage WHERE codetranche = " + codetrancheage)));
 	}
 
 	public static void modifier(Jouet unJouet) throws MonException
 	{
-		// TODO Auto-generated method stub
+		DialogueBd.insertionBD("UPDATE jouet SET "
+				+ "  codecateg     = \"" + unJouet.getCategorie().getCodecateg()
+				+ "\", codetranche = \"" + unJouet.getTrancheage().getCodetranche()
+				+ "\", libelle     = \"" + unJouet.getLibelle()
+				+ "\" WHERE numero = " + unJouet.getNumero());
 	}
 
 	public static Catalogue rechercherCatalogue(String annee) throws MonException
@@ -136,30 +155,54 @@ public class GestionErgosum
 
 	public static void modifierCatalogue(Catalogue leCatalogue) throws MonException
 	{
-		// TODO Auto-generated method stub
-		
+		DialogueBd.insertionBD("UPDATE catalogue SET "
+				+ " quantiteDistribuee = \"" + leCatalogue.getQuantiteDistribuee()
+				+ "\" WHERE annee = " + leCatalogue.getAnnee());
 	}
 
 	public static void ajouter(Jouet unJouet) throws MonException
 	{
-		// TODO Auto-generated method stub
-		
+		DialogueBd.insertionBD("INSERT INTO jouet (numero, codecateg, codetranche, libelle) VALUES( "
+				+ " \"" + unJouet.getNumero()
+				+ "\", \"" + unJouet.getCategorie().getCodecateg()
+				+ "\", \"" + unJouet.getTrancheage().getCodetranche()
+				+ "\", \"" + unJouet.getLibelle()
+				+ "\" )");
 	}
 
 	public static void effacer(String[] ids) throws MonException
 	{
-		// TODO Auto-generated method stub
+		StringBuilder sb = new StringBuilder();
+		Stream.of(ids).forEach(s -> 
+		{
+			if(sb.length() > 0)
+				sb.append("\", \"");
+			sb.append(s);
+		});
+
+		DialogueBd.insertionBD("DELETE FROM comporte "
+				+ " WHERE numero IN (\"" + sb.toString() + "\")");
+		DialogueBd.insertionBD("DELETE FROM jouet "
+				+ " WHERE numero IN (\"" + sb.toString() + "\")");
 	}
 
 	public static Object listerCatalogueQuantites(int anneeDebut, int nbCatalogues) throws MonException
 	{
-		return getCatalogues(DialogueBd.lecture("SELECT * FROM catalogue WHERE annee >= " + anneeDebut + " LIMIT 0, " + nbCatalogues));
+		return getCatalogueQuantites(DialogueBd.lecture("SELECT c.annee AS annee, co.quantite AS quantite, c.quantiteDistribuee AS quantitedistribuee FROM catalogue c INNER JOIN comporte co ON c.annee = co.annee WHERE c.annee >= " + anneeDebut + " AND c.annee < " + (anneeDebut + nbCatalogues)));
 	}
 
-	public static HashMap<Categorie, Integer> rechercherDictionnaire(String parameter) throws MonException
+	public static Map<Categorie, Integer> rechercherDictionnaire(String annee) throws MonException
 	{
-		// TODO Auto-generated method stub
-		return null;
+		return DialogueBd.lecture("SELECT ca.codecateg, ca.libcateg, SUM(c.quantite) AS quantite "
+				+ "FROM comporte c "
+				+ "INNER JOIN jouet j ON j.numero = c.numero "
+				+ "INNER JOIN categorie ca ON ca.codecateg = j.codecateg "
+				+ "WHERE c.annee = " + annee + " "
+				+ "GROUP BY ca.codecateg")
+				.stream()
+				.collect(Collectors.toMap(
+						e -> new Categorie(e.get("codecateg"), e.get("libcateg"), null),
+						e -> Integer.parseInt(e.get("quantite"))));
 	}
 	
 	
